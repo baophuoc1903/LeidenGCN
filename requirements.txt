@@ -9,4 +9,4 @@ scipy==1.10.0
 setuptools
 tqdm==4.64.1
 igraph==0.10.4
-torch==1.13.1+cu117
+# torch==1.13.1+cu117
