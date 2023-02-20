@@ -1,4 +1,4 @@
-# DBP391 Project 
+# THESIS
 This is the implementation of our thesis for Artificial Intelligence Bachelor at FPT University:
 
 
