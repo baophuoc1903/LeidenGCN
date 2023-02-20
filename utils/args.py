@@ -24,7 +24,7 @@ def args_parser():
     parser.add_argument('--use_cpu', action='store_true', help='Default using gpu')
     parser.add_argument('--device', type=int, default=0,
                         help='which gpu to use if any (default: 0)')
-    parser.add_argument('--epochs', type=int, default=10,
+    parser.add_argument('--epochs', type=int, default=500,
                         help='number of epochs to train')
     parser.add_argument('--num_evals', type=int, default=1,
                         help='The number of evaluation times')
