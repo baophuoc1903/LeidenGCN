@@ -10,13 +10,20 @@ This is the implementation of our thesis for Artificial Intelligence Bachelor at
 
 ## Requirement
 
-Create virtual enviroment and download necessary library list in requirements.txt:
+Create virtual enviroment:
 ```
 python -m venv venv
 cd venv/Scripts
 activate
 cd ../..
-pip install requirements.txt
+```
+
+Download necessary library:
+```
+pip install pyg-lib torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-1.13.1+cu117.html
+pip install torch-geometric
+pip install torch-cluster torch-spline-conv -f https://data.pyg.org/whl/torch-1.13.1+cu117.html
+pip install -r requirements.txt
 ```
 
 ## Training
