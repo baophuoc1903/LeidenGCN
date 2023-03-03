@@ -1,6 +1,6 @@
 import torch
 from torch_geometric.nn import ClusterGCNConv
-
+from torch_geometric.utils import dropout_edge
 
 class GCN(torch.nn.Module):
     def __init__(self, args):
@@ -27,10 +27,11 @@ class GCN(torch.nn.Module):
             conv.reset_parameters()
 
     def forward(self, x, edge_index):
-
+        # edge_index, _ = dropout_edge(edge_index, p=0.5, training=self.training)
         for conv in self.convs[:-1]:
 
             x = conv(x, edge_index)
+            # x = checkpoint(conv, x, edge_index)
             x = self.activation(x)
             x = self.dropout(x)
 

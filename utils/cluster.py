@@ -10,6 +10,26 @@ from copy import deepcopy
 from bisect import insort_right
 
 
+def generate_mini_batch(parts, num_cluster):
+    part_per_batch = len(parts) // num_cluster
+
+    random_idx = np.arange(len(parts))
+    np.random.shuffle(random_idx)
+    mini_batches = []
+    for i in range(num_cluster-1):
+        mini_batch = []
+        for parts_idx in range(i*part_per_batch, (i+1)*part_per_batch):
+            mini_batch.extend(parts[random_idx[parts_idx]])
+        mini_batches.append(mini_batch)
+
+    last_batch = []
+    for parts_idx in range((num_cluster-1)*part_per_batch, len(parts)):
+        last_batch.extend(parts[random_idx[parts_idx]])
+    mini_batches.append(last_batch)
+
+    return mini_batches
+
+
 def intersection(lst1, lst2):
     return list(set(lst1) & set(lst2))
 
@@ -95,41 +115,42 @@ def random_partition_graph(num_nodes, cluster_number=100):
     return list_parts
 
 
-def leiden_clustering(graph, filename=None, verbose=False):
+def leiden_clustering(graph, filename=None, verbose=False, max_comm_size=0):
     """
     Apply leiden clustering algorithm for a graph
     :param graph: graph that need to cluster
     :param filename: name of the file to save clusters after using leiden algorithms
     :param verbose: if true => tracing progress by printing output
+    :param max_comm_size: maximum number of nodes in each cluster
     :return: List of clusters. Each element is a list of nodes in same cluster
     """
     start = time.time()
-    parts = la.find_partition(graph, la.ModularityVertexPartition)
+    parts = la.find_partition(graph, la.ModularityVertexPartition, max_comm_size=max_comm_size, n_iterations=-1)
     if verbose:
         print(f"Clustering {graph.vcount()} nodes into {len(parts)} clusters in {(time.time() - start):.4f} seconds")
     if filename is not None:
         cluster_writer(parts, filename)
-    return list(parts)
+    return sorted(list(parts), key=lambda x: len(x))
 
 
-def leiden_recursive(graph, orig_parts, threshold=10000, verbose=False):
+def leiden_recursive(graph, orig_parts, max_comm_size=10000, verbose=False):
     """
     Recursively apply leiden algorithm for clusters that has larger number of nodes than a threshold
     :param graph: original graph
     :param orig_parts: list of clusters after using some clustering algorithms.
                         Each element is a list of nodes in same cluster
-    :param threshold: maximum number of nodes in a same cluster
+    :param max_comm_size: maximum number of nodes in a same cluster
     :param verbose: if true => tracing progress by printing output
     :return: list of clusters. Each element is a list of nodes in same cluster (with size smaller than threshold)
     """
     parts = deepcopy(orig_parts)
     idx = 0
     while idx < len(parts):
-        if len(parts[idx]) > threshold:
+        if len(parts[idx]) > max_comm_size:
             subG = graph.subgraph(parts[idx])
             if verbose:
                 print("Start clustering")
-            sub_parts = leiden_clustering(subG)
+            sub_parts = leiden_clustering(subG, verbose=verbose)
             sub_parts = [[subG.vs[p]['name'] for p in P] for P in sub_parts]
             del parts[idx]
             parts.extend(sub_parts)
@@ -140,12 +161,13 @@ def leiden_recursive(graph, orig_parts, threshold=10000, verbose=False):
     return parts
 
 
-def outer_edge_ratio(graph, first_part, second_part):
+def outer_edge_ratio(graph, first_part, second_part, eps=1e-8):
     """
     Compute the ratio between number of edges that connect 2 clusters and total number of nodes in 2 clusters
     :param graph: original graph
     :param first_part: list of vertex in first cluster
     :param second_part: list of vertex in second cluster
+    :param eps: Avoid 0 ratio
     :return: a ratio represents the degree gain if merge 2 cluster together
     """
     first = graph.subgraph(first_part)
@@ -154,10 +176,10 @@ def outer_edge_ratio(graph, first_part, second_part):
 
     inner = first.ecount() + second.ecount()
     outer = union.ecount()
-    return (outer - inner) / (len(first_part) + len(second_part))
+    return (outer - inner) / (len(first_part) + len(second_part)) + eps
 
 
-def merge_clusters(graph, orig_parts, n_iters=1, threshold=10000, verbose=False):
+def merge_clusters(graph, orig_parts, n_iters=2, max_comm_size=10000, min_comm_size=7500, verbose=False):
     """
     Merging clusters that are too small based on number of edges between clusters.
     A cluster is merging with a different cluster whose has the highest ratio between number of edges connecting
@@ -165,7 +187,8 @@ def merge_clusters(graph, orig_parts, n_iters=1, threshold=10000, verbose=False)
     :param graph: original graph
     :param orig_parts: list contain all clusters in graph
     :param n_iters: number of iteration to perform merging clusters
-    :param threshold: maximum number of nodes in a cluster
+    :param min_comm_size: minimum number of nodes in a cluster
+    :param max_comm_size: maximum number of nodes in a cluster
     :param verbose: if true => tracing progress by printing output
     :return: a list, whose element is a list of nodes that is in the same cluster after perform merging
     """
@@ -177,7 +200,10 @@ def merge_clusters(graph, orig_parts, n_iters=1, threshold=10000, verbose=False)
             idx_max = None
             max_ratio = None
             while nd_idx < len(parts):
-                if len(parts[st_idx]) + len(parts[nd_idx]) > threshold:
+                if len(parts[st_idx]) > min_comm_size:
+                    break
+                if len(parts[st_idx]) + len(parts[nd_idx]) > max_comm_size:
+                # if (len(parts[st_idx]) + len(parts[nd_idx]) > max_comm_size) and (len(parts[nd_idx]) > min_comm_size):
                     break
                 cur_ratio = outer_edge_ratio(graph, parts[st_idx], parts[nd_idx])
                 if max_ratio is None or max_ratio < cur_ratio:
@@ -201,19 +227,26 @@ def merge_clusters(graph, orig_parts, n_iters=1, threshold=10000, verbose=False)
     return parts
 
 
-def custom_clustering(graph, leiden_parts, threshold=10000, n_iters=1):
+def custom_clustering(graph, leiden_parts, max_comm_size=10000, min_comm_size=7500, n_iters=1, verbose=False):
     """
     custom exist partitions generate by leiden algorithm, which large partition is divided and small partition is merge together
     :param graph: graph need to partition
     :param leiden_parts: clusters generated by leiden algorithm
-    :param threshold: maximum number of nodes for a cluster
+    :param max_comm_size: maximum number of nodes for a cluster
+    :param min_comm_size: minimum number of nodes for a cluster
     :param n_iters: number of iteration to perform merging clusters
+    :param verbose: if true => tracing progress by printing output
     :return: a list, whose element is a list of nodes that is in the same cluster after perform custom clustering
     """
-    # Continue partition cluster too large
-    parts = leiden_recursive(graph, leiden_parts, threshold=threshold)
-    # Merge cluster too small to form larger cluster
-    parts = merge_clusters(graph, parts, n_iters=n_iters, threshold=threshold)
+    parts = deepcopy(leiden_parts)
+    for it in range(n_iters):
+        print(f"\n===============Iteration {it+1}===============\n")
+        # Continue partition cluster too large
+        parts = leiden_recursive(graph, parts, max_comm_size, verbose)
+        # Merge cluster too small to form larger cluster
+        max_size = int(1.2*max_comm_size) if it != n_iters-1 else max_comm_size
+        parts = merge_clusters(graph, parts, max_comm_size=max_size, min_comm_size=min_comm_size,
+                               verbose=verbose)
 
     return parts
 
@@ -222,16 +255,17 @@ if __name__ == '__main__':
     dirname = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'dataset')
     G = build_graph(dirname)
 
-    # # Leiden cluster
-    # ig.summary(G)
-    # leiden_parts = leiden_clustering(G, None)
-    # parts = custom_clustering(G, leiden_parts, threshold=2000, n_iters=2)
-    #
-    # print(f"Number of clusters: {len(parts)}")
-    # for i, part in enumerate(parts):
-    #     print(f"Cluster {i} contain {len(part)} nodes")
-    # cluster_writer(parts, os.path.join(dirname, 'clusters_small.csv'))
+    # Leiden cluster
+    ig.summary(G)
+    for cnt in range(1):
+        leiden_parts = leiden_clustering(G, None, verbose=True)
+        parts = custom_clustering(G, leiden_parts, max_comm_size=300, min_comm_size=200, n_iters=1, verbose=True)
+
+        print(f"Number of clusters: {len(parts)}")
+        for i, part in enumerate(parts):
+            print(f"Cluster {i} contain {len(part)} nodes")
+        cluster_writer(parts, os.path.join(dirname, f'leiden_clusters_50_200_raw.csv'))
 
     # Random cluster
-    parts = random_partition_graph(G.vcount(), cluster_number=20)
-    cluster_writer(parts, os.path.join(dirname, 'clusters_small.csv'))
+    # parts = random_partition_graph(G.vcount(), cluster_number=20)
+    # cluster_writer(parts, os.path.join(dirname, 'clusters_small.csv'))

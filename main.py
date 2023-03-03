@@ -1,4 +1,5 @@
 import copy
+import os
 import time
 import logging
 import glob
@@ -10,16 +11,16 @@ from utils.args import args_parser
 from utils.logger import Logger
 from utils.cluster import (
     cluster_reader,
+    generate_mini_batch,
     random_partition_graph,
-    build_graph,
-    leiden_clustering,
-    custom_clustering
 )
 from utils.loops import (
     train,
     multi_evaluate)
 from gcn import GCN
 import warnings
+
+# import bitsandbytes as bnb
 
 warnings.filterwarnings('ignore')
 
@@ -44,17 +45,27 @@ def training(args, scripts=True):
     evaluator = Evaluator(args.dataset)
     criterion = torch.nn.BCEWithLogitsLoss()
 
-    sub_dir = 'random-train_{}-test_{}-num_evals_{}'.format(args.cluster_number,
-                                                            args.cluster_number,
-                                                            args.num_evals)
+    sub_dir = '{}-train_{}-test_{}-num_evals_{}'.format(args.cluster_type, args.cluster_number,
+                                                        args.cluster_number,
+                                                        args.num_evals)
     logging.info(f"Model filename used to save: {sub_dir}")
 
     # GCN
     model = GCN(args).to(device)
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.75, patience=10,
-                                                           min_lr=1e-6, verbose=True)
+    # optimizer = bnb.optim.Adam8bit(model.parameters(), lr=args.lr)
+
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=20,
+    #                                                        min_lr=1e-6, verbose=True)
+    # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer,
+    #                                                                  T_0=args.intervals,
+    #                                                                  eta_min=1e-6,
+    #                                                                  verbose=True)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer,
+                                                                     T_0=10,
+                                                                     eta_min=1e-6,
+                                                                     verbose=True)
 
     results = {'highest_valid': (0, 0),
                'final_train': (0, 0),
@@ -62,33 +73,35 @@ def training(args, scripts=True):
                'highest_train': (0, 0)}
 
     start_time = time.time()
+    args.clusters_path = os.path.splitext(args.clusters_path)[0]
 
     if args.cluster_type == 'random':
-        parts = random_partition_graph(dataset.total_no_of_nodes, cluster_number=args.cluster_number)
+        mini_batches = random_partition_graph(dataset.total_no_of_nodes, cluster_number=args.cluster_number)
     else:
-        parts = cluster_reader(args.cluster_path)
-    args.cluster_number = len(parts)
-    data = dataset.generate_sub_graphs(parts, cluster_number=args.cluster_number)
+        logging.info(f"Reading cluster from: {args.clusters_path}.csv")
+        leiden_parts = cluster_reader(f"{args.clusters_path}.csv")
+        mini_batches = generate_mini_batch(leiden_parts, args.cluster_number)
+    args.cluster_number = len(mini_batches)
+    data = dataset.generate_sub_graphs(mini_batches, cluster_number=args.cluster_number)
 
     for epoch in range(1, args.epochs + 1):
 
         if epoch % args.intervals == 0:
-            print("\n==========Sampling subgraph for next interval==========")
+            logging.info("\n==========Sampling subgraph for next interval==========")
             if args.cluster_type == 'random':
-                parts = random_partition_graph(dataset.total_no_of_nodes, cluster_number=args.cluster_number)
+                mini_batches = random_partition_graph(dataset.total_no_of_nodes, cluster_number=args.cluster_number)
             else:
-                G = build_graph('./dataset')
-                leiden_parts = leiden_clustering(G, None)
-                parts = custom_clustering(G, leiden_parts, threshold=10000, n_iters=1)
-            args.cluster_number = len(parts)
-            data = dataset.generate_sub_graphs(parts, cluster_number=args.cluster_number)
+                mini_batches = generate_mini_batch(leiden_parts, args.cluster_number)
+            args.cluster_number = len(mini_batches)
+            data = dataset.generate_sub_graphs(mini_batches, cluster_number=args.cluster_number)
 
         epoch_loss = train(data, dataset, model, optimizer, criterion, device, edge_sampling=args.edge_sampling)
         # logging.info('Epoch {}, training loss {:.4f}'.format(epoch, epoch_loss))
 
-        result = multi_evaluate([data], dataset, model, evaluator, device, edge_sampling=args.edge_sampling * 2)
+        result = multi_evaluate([data], dataset, model, evaluator, device, edge_sampling=args.edge_sampling)
 
-        scheduler.step(result['valid']['rocauc'])
+        # scheduler.step(result['valid']['rocauc'])
+        scheduler.step()
 
         logger.add_results(result, epoch_loss)
         logger.print_statistic()
@@ -117,7 +130,7 @@ def training(args, scripts=True):
 def main():
     args = args_parser()
     for run in range(args.nruns):
-        print(f"\n\nTimes of experiments: {run+1}\n\n")
+        print(f"\n\nTimes of experiments: {run + 1}\n\n")
         cur_args = copy.deepcopy(args)
         if run:
             training(cur_args, scripts=False)

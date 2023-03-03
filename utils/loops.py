@@ -3,26 +3,32 @@ import statistics
 import numpy as np
 from tqdm import tqdm
 from . import intersection, process_indexes
+from torch.cuda.amp import autocast, GradScaler
+from torch.utils.checkpoint import checkpoint
 
 
 def train(data, dataset, model, optimizer, criterion, device, edge_sampling=800000):
-
     loss_list = []
     model.train()
-    sg_nodes, sg_edges, sg_edges_index, _ = data
+    sg_nodes, sg_edges, _, _ = data
 
     train_y = dataset.y[dataset.train_idx]
     idx_clusters = np.arange(len(sg_nodes))
     np.random.shuffle(idx_clusters)
+    scaler = GradScaler()
 
     for idx in tqdm(idx_clusters, desc='Training process'):
-
         x = dataset.x[sg_nodes[idx]].float().to(device)
 
-        # Random
-        # random_idx = np.random.randint(0, sg_edges[idx].shape[1], size=(min(sg_edges[idx].shape[1], edge_sampling)))
+        # # Random
+        # random_idx = np.random.choice(sg_edges[idx].shape[1], size=min(sg_edges[idx].shape[1], edge_sampling),
+        #                               replace=False)
         # random_idx = np.sort(random_idx)
         # sg_edges_ = sg_edges[idx][:, random_idx].to(device)
+
+        # print()
+        # print(x.shape, sg_edges[idx].shape, '****')
+        # print()
 
         # Not random
         sg_edges_ = sg_edges[idx].to(device)
@@ -33,12 +39,14 @@ def train(data, dataset, model, optimizer, criterion, device, edge_sampling=8000
         training_idx = [mapper[t_idx] for t_idx in inter_idx]
 
         optimizer.zero_grad()
+        with autocast(enabled=True):
+            pred = model(x, sg_edges_)
+            target = train_y[inter_idx].to(device)
+            loss = criterion(pred[training_idx], target.float())
 
-        pred = model(x, sg_edges_)
-        target = train_y[inter_idx].to(device)
-        loss = criterion(pred[training_idx].to(torch.float32), target.to(torch.float32))
-        loss.backward()
-        optimizer.step()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
 
         loss_list.append(loss.item())
 
@@ -46,7 +54,7 @@ def train(data, dataset, model, optimizer, criterion, device, edge_sampling=8000
 
 
 @torch.no_grad()
-def multi_evaluate(valid_data_list, dataset, model, evaluator, device, edge_sampling=400000):
+def multi_evaluate(valid_data_list, dataset, model, evaluator, device, edge_sampling=800000):
     model.eval()
     target = dataset.y.detach().numpy()
 
@@ -59,7 +67,7 @@ def multi_evaluate(valid_data_list, dataset, model, evaluator, device, edge_samp
     valid_idx = dataset.valid_idx.tolist()
 
     for valid_data_item in valid_data_list:
-        sg_nodes, sg_edges, sg_edges_index, _ = valid_data_item
+        sg_nodes, sg_edges, _, _ = valid_data_item
         idx_clusters = np.arange(len(sg_nodes))
 
         test_predict = []
@@ -85,13 +93,17 @@ def multi_evaluate(valid_data_list, dataset, model, evaluator, device, edge_samp
             tr_idx = [mapper[tr_idx] for tr_idx in inter_tr_idx]
             v_idx = [mapper[v_idx] for v_idx in inter_v_idx]
 
-            # Not random
-            pred = model(x, sg_edges[idx].to(device)).cpu().detach()
-
             # # Random
-            # random_idx = np.random.randint(0, sg_edges[idx].shape[1], size=(min(sg_edges[idx].shape[1], edge_sampling)))
+            # random_idx = np.random.choice(sg_edges[idx].shape[1], size=min(sg_edges[idx].shape[1], edge_sampling),
+            #                               replace=False)
             # random_idx = np.sort(random_idx)
-            # pred = model(x, sg_edges[idx][:, random_idx].to(device)).cpu().detach()
+            #
+            # with autocast(enabled=True):
+            #     pred = model(x, sg_edges[idx][:, random_idx].to(device)).cpu().detach()
+
+            # Not random
+            with autocast(enabled=True):
+                pred = model(x, sg_edges[idx].to(device)).cpu().detach()
 
             train_predict.append(pred[tr_idx])
             valid_predict.append(pred[v_idx])

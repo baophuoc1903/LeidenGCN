@@ -6,6 +6,21 @@ import csv
 import torch
 
 
+def set_logging(dirname):
+    log_format = '%(asctime)s: %(message)s'
+    logging.basicConfig(stream=sys.stdout,
+                        level=logging.INFO,
+                        format=log_format,
+                        datefmt='%Y-%m-%d %H:%M:%S')
+    fh = logging.FileHandler(os.path.join(dirname, 'train_log.txt'))
+    fh.setFormatter(logging.Formatter(log_format))
+    for hdlr in logging.getLogger().handlers[:]:  # remove all old handlers
+        if isinstance(hdlr, logging.FileHandler):
+            print(f"\033[93mWarning: Delete a exist logging handle\033[0m")
+            logging.getLogger().removeHandler(hdlr)
+    logging.getLogger().addHandler(fh)
+
+
 class Logger:
 
     def __init__(self, args, scripts_to_save=None):
@@ -21,14 +36,7 @@ class Logger:
         self.args.model_save_path = os.path.join(self.args.save, self.args.model_save_path)
 
         # Log file
-        log_format = '%(asctime)s: %(message)s'
-        logging.basicConfig(stream=sys.stdout,
-                            level=logging.INFO,
-                            format=log_format,
-                            datefmt='%Y-%m-%d %H:%M:%S')
-        fh = logging.FileHandler(os.path.join(self.args.save, 'train_log.txt'))
-        fh.setFormatter(logging.Formatter(log_format))
-        logging.getLogger().addHandler(fh)
+        set_logging(self.args.save)
 
         # Tracking result (Roc-Auc, loss)
         self.results_metric = {'train': [], 'valid': [], 'test': []}

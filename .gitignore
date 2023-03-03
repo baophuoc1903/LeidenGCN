@@ -2,3 +2,5 @@
 /venv/
 /log/
 /__pycache__/
+analysis.ipynb
+cluster_process.ipynb

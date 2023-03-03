@@ -16,7 +16,7 @@ def args_parser():
                         help='Training epoch before clusters again')
     parser.add_argument('--cluster_type', type=str, default='random', choices=['random', 'leiden'],
                         help='Graph partition type (random or leiden)')
-    parser.add_argument('--edge_sampling', type=int, default=100000000,
+    parser.add_argument('--edge_sampling', type=int, default=2000000,
                         help='maximum number of edge per cluster')
 
     # Training args

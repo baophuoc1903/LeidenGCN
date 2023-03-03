@@ -48,7 +48,7 @@ class OGBNDataset(object):
         # transpose and then convert it to numpy array type
         self.edge_index_array = self.edge_index.t().numpy()
         # obtain edge index dict
-        self.edge_index_dict = self.edge_features_index()
+        # self.edge_index_dict = self.edge_features_index()
         # obtain adjacent matrix
         self.adj = self.construct_adj()
         # obtain node feature via edge feature
@@ -155,7 +155,7 @@ class OGBNDataset(object):
         sg_nodes = [[] for _ in range(no_of_batches)]
         sg_edges = [[] for _ in range(no_of_batches)]
         sg_edges_orig = [[] for _ in range(no_of_batches)]
-        sg_edges_index = [[] for _ in range(no_of_batches)]
+        # sg_edges_index = [[] for _ in range(no_of_batches)]
 
         edges_no = 0
 
@@ -170,15 +170,16 @@ class OGBNDataset(object):
             # map edges to original edges
             sg_edges_orig[cluster] = OGBNDataset.edge_list_mapper(mapper, sg_edges[cluster])
             # edge attribute index
-            sg_edges_index[cluster] = [self.edge_index_dict[(edge[0], edge[1])] for edge in
-                                       sg_edges_orig[cluster].t().numpy()]
+            # sg_edges_index[cluster] = [self.edge_index_dict[(edge[0], edge[1])] for edge in
+            #                            sg_edges_orig[cluster].t().numpy()]
 
         logging.info('The number of clusters: {}'.format(cluster_number))
         logging.info('Mini batch size: {}'.format(batch_size))
         logging.info('Total number edges of sub graphs: {}, of whole graph: {}, {:.2f} % edges are lost\n'.
                      format(edges_no, self.total_no_of_edges, (1 - edges_no / self.total_no_of_edges) * 100))
 
-        return sg_nodes, sg_edges, sg_edges_index, sg_edges_orig
+        # return sg_nodes, sg_edges, sg_edges_index, sg_edges_orig
+        return sg_nodes, sg_edges, None, sg_edges_orig
 
     @staticmethod
     def edge_list_mapper(mapper, sg_edges_list):
