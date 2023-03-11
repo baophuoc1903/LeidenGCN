@@ -16,14 +16,14 @@ def generate_mini_batch(parts, num_cluster):
     random_idx = np.arange(len(parts))
     np.random.shuffle(random_idx)
     mini_batches = []
-    for i in range(num_cluster-1):
+    for i in range(num_cluster - 1):
         mini_batch = []
-        for parts_idx in range(i*part_per_batch, (i+1)*part_per_batch):
+        for parts_idx in range(i * part_per_batch, (i + 1) * part_per_batch):
             mini_batch.extend(parts[random_idx[parts_idx]])
         mini_batches.append(mini_batch)
 
     last_batch = []
-    for parts_idx in range((num_cluster-1)*part_per_batch, len(parts)):
+    for parts_idx in range((num_cluster - 1) * part_per_batch, len(parts)):
         last_batch.extend(parts[random_idx[parts_idx]])
     mini_batches.append(last_batch)
 
@@ -90,7 +90,7 @@ def build_graph(root='./'):
     for u, v in tqdm(edges, desc='Building edge'):
         list_edges.append((u, v))
 
-    graph = ig.Graph(ds.data.y.shape[0], list_edges, edge_attrs={'weight': attr})
+    graph = ig.Graph(ds.data.y.shape[0], list_edges, edge_attrs={'weight': np.max(attr, axis=1)})
     graph.vs["label"] = ds.data.y
 
     for i in tqdm(range(graph.vcount()), desc="Building vertices"):
@@ -125,7 +125,9 @@ def leiden_clustering(graph, filename=None, verbose=False, max_comm_size=0):
     :return: List of clusters. Each element is a list of nodes in same cluster
     """
     start = time.time()
-    parts = la.find_partition(graph, la.ModularityVertexPartition, max_comm_size=max_comm_size, n_iterations=-1)
+    parts = la.find_partition(graph, la.ModularityVertexPartition, max_comm_size=max_comm_size, weights='weight')
+    if len(parts) == 1:
+        print(f"\033[93mWarning: Subgraph contain only 1 cluster\033[0m")
     if verbose:
         print(f"Clustering {graph.vcount()} nodes into {len(parts)} clusters in {(time.time() - start):.4f} seconds")
     if filename is not None:
@@ -151,6 +153,9 @@ def leiden_recursive(graph, orig_parts, max_comm_size=10000, verbose=False):
             if verbose:
                 print("Start clustering")
             sub_parts = leiden_clustering(subG, verbose=verbose)
+            if len(sub_parts) == 1:
+                print(f"\033[93mWarning: Divided again\033[0m")
+                sub_parts = leiden_clustering(subG, verbose=True, max_comm_size=max_comm_size)
             sub_parts = [[subG.vs[p]['name'] for p in P] for P in sub_parts]
             del parts[idx]
             parts.extend(sub_parts)
@@ -179,6 +184,20 @@ def outer_edge_ratio(graph, first_part, second_part, eps=1e-8):
     return (outer - inner) / (len(first_part) + len(second_part)) + eps
 
 
+def singleton_communities(parts, size=3):
+    """
+    Finding all community that is considered to be a singleton community
+    :param parts: list of communities
+    :param size: minimum size of communities that is considered not to be a singleton community
+    :return: list of singleton community
+    """
+    single_list = []
+    for idx in range(len(parts)):
+        if len(parts[idx]) < size:
+            single_list.extend(parts[idx])
+    return single_list
+
+
 def merge_clusters(graph, orig_parts, n_iters=2, max_comm_size=10000, min_comm_size=7500, verbose=False):
     """
     Merging clusters that are too small based on number of edges between clusters.
@@ -203,7 +222,7 @@ def merge_clusters(graph, orig_parts, n_iters=2, max_comm_size=10000, min_comm_s
                 if len(parts[st_idx]) > min_comm_size:
                     break
                 if len(parts[st_idx]) + len(parts[nd_idx]) > max_comm_size:
-                # if (len(parts[st_idx]) + len(parts[nd_idx]) > max_comm_size) and (len(parts[nd_idx]) > min_comm_size):
+                    # if (len(parts[st_idx]) + len(parts[nd_idx]) > max_comm_size) and (len(parts[nd_idx]) > min_comm_size):
                     break
                 cur_ratio = outer_edge_ratio(graph, parts[st_idx], parts[nd_idx])
                 if max_ratio is None or max_ratio < cur_ratio:
@@ -227,7 +246,8 @@ def merge_clusters(graph, orig_parts, n_iters=2, max_comm_size=10000, min_comm_s
     return parts
 
 
-def custom_clustering(graph, leiden_parts, max_comm_size=10000, min_comm_size=7500, n_iters=1, verbose=False):
+def custom_clustering(graph, leiden_parts, max_comm_size=10000, min_comm_size=7500, n_iters=1, verbose=False,
+                      overlap=0):
     """
     custom exist partitions generate by leiden algorithm, which large partition is divided and small partition is merge together
     :param graph: graph need to partition
@@ -239,16 +259,20 @@ def custom_clustering(graph, leiden_parts, max_comm_size=10000, min_comm_size=75
     :return: a list, whose element is a list of nodes that is in the same cluster after perform custom clustering
     """
     parts = deepcopy(leiden_parts)
+    overlap_list = []
     for it in range(n_iters):
-        print(f"\n===============Iteration {it+1}===============\n")
+        print(f"\n===============Iteration {it + 1}===============\n")
         # Continue partition cluster too large
         parts = leiden_recursive(graph, parts, max_comm_size, verbose)
+        # Consider singleton communities as overlap community
+        if overlap:
+            overlap_list.extend(singleton_communities(parts, size=overlap))
         # Merge cluster too small to form larger cluster
-        max_size = int(1.2*max_comm_size) if it != n_iters-1 else max_comm_size
+        max_size = int(1.2 * max_comm_size) if it != n_iters - 1 else max_comm_size
         parts = merge_clusters(graph, parts, max_comm_size=max_size, min_comm_size=min_comm_size,
                                verbose=verbose)
 
-    return parts
+    return parts, sorted(list(set(overlap_list)))
 
 
 if __name__ == '__main__':
@@ -259,12 +283,14 @@ if __name__ == '__main__':
     ig.summary(G)
     for cnt in range(1):
         leiden_parts = leiden_clustering(G, None, verbose=True)
-        parts = custom_clustering(G, leiden_parts, max_comm_size=300, min_comm_size=200, n_iters=1, verbose=True)
+        parts, overlap_list = custom_clustering(G, leiden_parts, max_comm_size=100, min_comm_size=50, n_iters=1,
+                                                verbose=True,
+                                                overlap=3)
 
         print(f"Number of clusters: {len(parts)}")
         for i, part in enumerate(parts):
             print(f"Cluster {i} contain {len(part)} nodes")
-        cluster_writer(parts, os.path.join(dirname, f'leiden_clusters_50_200_raw.csv'))
+        cluster_writer(parts+overlap_list, os.path.join(dirname, f'leiden_clusters_50_100_raw_weight_overlap.csv'))
 
     # Random cluster
     # parts = random_partition_graph(G.vcount(), cluster_number=20)

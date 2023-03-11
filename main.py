@@ -53,7 +53,7 @@ def training(args, scripts=True):
     # GCN
     model = GCN(args).to(device)
 
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, amsgrad=True)
     # optimizer = bnb.optim.Adam8bit(model.parameters(), lr=args.lr)
 
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=20,
@@ -86,7 +86,7 @@ def training(args, scripts=True):
 
     for epoch in range(1, args.epochs + 1):
 
-        if epoch % args.intervals == 0:
+        if (epoch % args.intervals == 1 and epoch > args.intervals) or (args.intervals == 1 and epoch > 1):
             logging.info("\n==========Sampling subgraph for next interval==========")
             if args.cluster_type == 'random':
                 mini_batches = random_partition_graph(dataset.total_no_of_nodes, cluster_number=args.cluster_number)
