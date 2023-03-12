@@ -31,6 +31,7 @@ def args_parser():
     parser.add_argument('--lr', type=float, default=0.001,
                         help='learning rate set for optimizer')
     parser.add_argument('--dropout', type=float, default=0.5)
+    parser.add_argument('--overlap', type=int, default=0, help="Using overlap node to keep node distribution balance")
 
     # Model args
     parser.add_argument('--num_layers', type=int, default=3,

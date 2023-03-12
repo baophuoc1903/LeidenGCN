@@ -175,7 +175,7 @@ class OGBNDataset(object):
 
         logging.info('The number of clusters: {}'.format(cluster_number))
         logging.info('Mini batch size: {}'.format(batch_size))
-        logging.info('Total number edges of sub graphs: {}, of whole graph: {}, {:.2f} % edges are lost\n'.
+        logging.info('Total number edges of sub graphs: {}, of whole graph: {}, {:.2f} % edges are lost'.
                      format(edges_no, self.total_no_of_edges, (1 - edges_no / self.total_no_of_edges) * 100))
 
         # return sg_nodes, sg_edges, sg_edges_index, sg_edges_orig
