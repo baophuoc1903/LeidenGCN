@@ -136,7 +136,7 @@ class OGBNDataset(object):
             print('Edges\' indexes information is saved into file {}'.format(file_name))
         return edge_index_dict
 
-    def generate_sub_graphs(self, parts, cluster_number=10, batch_size=1):
+    def generate_sub_graphs(self, parts, cluster_number=10, batch_size=1, run_type='training'):
         """
         Generate sub_graphs for SGD training
         :param parts: an index array of size (num_nodes,). Values from [0, cluster_number)
@@ -159,7 +159,7 @@ class OGBNDataset(object):
 
         edges_no = 0
 
-        for cluster in trange(no_of_batches, desc="Generate subgraph for training"):
+        for cluster in trange(no_of_batches, desc=f"Generate subgraph for {run_type}"):
             sg_nodes[cluster] = np.array(parts[cluster])
             sg_edges[cluster] = tg.utils.from_scipy_sparse_matrix(self.adj[sg_nodes[cluster], :][:, sg_nodes[cluster]])[
                 0]  # Edge index is reset from 0 to length of sg_nodes[cluster]
@@ -174,7 +174,6 @@ class OGBNDataset(object):
             #                            sg_edges_orig[cluster].t().numpy()]
 
         logging.info('The number of clusters: {}'.format(cluster_number))
-        logging.info('Mini batch size: {}'.format(batch_size))
         logging.info('Total number edges of sub graphs: {}, of whole graph: {}, {:.2f} % edges are lost'.
                      format(edges_no, self.total_no_of_edges, (1 - edges_no / self.total_no_of_edges) * 100))
 

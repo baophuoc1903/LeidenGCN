@@ -14,10 +14,8 @@ def args_parser():
                         help='number of clusters')
     parser.add_argument('--intervals', type=int, default=20,
                         help='Training epoch before clusters again')
-    parser.add_argument('--cluster_type', type=str, default='random', choices=['random', 'leiden'],
+    parser.add_argument('--cluster_type', type=str, default='random', choices=['random', 'leiden', 'leiden_species'],
                         help='Graph partition type (random or leiden)')
-    parser.add_argument('--edge_sampling', type=int, default=2000000,
-                        help='maximum number of edge per cluster')
 
     # Training args
     parser.add_argument('--nruns', type=int, default=5, help='number of training time')
@@ -31,7 +29,9 @@ def args_parser():
     parser.add_argument('--lr', type=float, default=0.001,
                         help='learning rate set for optimizer')
     parser.add_argument('--dropout', type=float, default=0.5)
+    parser.add_argument('--edge_drop', type=float, default=0.0)
     parser.add_argument('--overlap', type=int, default=0, help="Using overlap node to keep node distribution balance")
+    parser.add_argument('--overlap_ratio', type=float, default=0.0, help="Percent of overlapping nodes per clusters")
 
     # Model args
     parser.add_argument('--num_layers', type=int, default=3,

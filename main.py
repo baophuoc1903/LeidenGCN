@@ -9,18 +9,12 @@ from dataset import OGBNDataset
 from ogb.nodeproppred import Evaluator
 from utils.args import args_parser
 from utils.logger import Logger
-from utils.cluster import (
-    cluster_reader,
-    generate_mini_batch,
-    random_partition_graph,
-)
+from utils.cluster import partition_graph, node_species_histogram, histogram_plot
 from utils.loops import (
     train,
     multi_evaluate)
 from gcn import GCN
 import warnings
-
-# import bitsandbytes as bnb
 
 warnings.filterwarnings('ignore')
 
@@ -53,17 +47,10 @@ def training(args, scripts=True):
     # GCN
     model = GCN(args).to(device)
 
-    optimizer = optim.Adam(model.parameters(), lr=args.lr, amsgrad=True)
-    # optimizer = bnb.optim.Adam8bit(model.parameters(), lr=args.lr)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=20,
-    #                                                        min_lr=1e-6, verbose=True)
-    # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer,
-    #                                                                  T_0=args.intervals,
-    #                                                                  eta_min=1e-6,
-    #                                                                  verbose=True)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer,
-                                                                     T_0=10,
+                                                                     T_0=250,
                                                                      eta_min=1e-6,
                                                                      verbose=True)
 
@@ -73,34 +60,40 @@ def training(args, scripts=True):
                'highest_train': (0, 0)}
 
     start_time = time.time()
-    args.clusters_path = os.path.splitext(args.clusters_path)[0]
+    # args.clusters_path = os.path.splitext(args.clusters_path)[0]
 
-    if args.cluster_type == 'random':
-        mini_batches = random_partition_graph(dataset.total_no_of_nodes, cluster_number=args.cluster_number)
-    else:
-        logging.info(f"Reading cluster from: {args.clusters_path}.csv")
-        leiden_parts = cluster_reader(f"{args.clusters_path}.csv")
-        mini_batches = generate_mini_batch(leiden_parts, args.cluster_number)
-    args.cluster_number = len(mini_batches)
-    data = dataset.generate_sub_graphs(mini_batches, cluster_number=args.cluster_number)
-
+    data_train = None
+    # data_infer = None
     for epoch in range(1, args.epochs + 1):
 
-        if (epoch % args.intervals == 1 and epoch > args.intervals) or (args.intervals == 1 and epoch > 1):
+        if epoch % args.intervals == 1 or args.intervals == 1:
             logging.info("\n==========Sampling subgraph for next interval==========")
-            if args.cluster_type == 'random':
-                mini_batches = random_partition_graph(dataset.total_no_of_nodes, cluster_number=args.cluster_number)
-            else:
-                mini_batches = generate_mini_batch(leiden_parts, args.cluster_number)
-            args.cluster_number = len(mini_batches)
-            data = dataset.generate_sub_graphs(mini_batches, cluster_number=args.cluster_number)
+            mini_batches_train = partition_graph(dataset, args)
+            data_train = dataset.generate_sub_graphs(mini_batches_train, cluster_number=args.cluster_number)
 
-        epoch_loss = train(data, dataset, model, optimizer, criterion, device, edge_sampling=args.edge_sampling)
-        # logging.info('Epoch {}, training loss {:.4f}'.format(epoch, epoch_loss))
+            # mini_batches_infer = partition_graph(dataset, args, infer=True)
+            # data_infer = dataset.generate_sub_graphs(mini_batches_infer, cluster_number=args.cluster_number // 2,
+            #                                          run_type='evaluation')
 
-        result = multi_evaluate([data], dataset, model, evaluator, device, edge_sampling=args.edge_sampling)
+            if epoch == 1:
+                # Visualize training clusters
+                mini_batches_histogram_train = node_species_histogram(dataset.whole_graph, mini_batches_train)
+                histogram_plot(mini_batches_histogram_train, dataset.whole_graph.node_species.unique(), label="train_histogram")
 
-        # scheduler.step(result['valid']['rocauc'])
+                # Visualize inference clusters
+                # mini_batches_histogram_infer = node_species_histogram(dataset.whole_graph, mini_batches_infer)
+                # histogram_plot(mini_batches_histogram_infer, dataset.whole_graph.node_species.unique(),
+                #                label="infer_histogram")
+
+            args.cluster_number = len(mini_batches_train)
+            logging.info(f"Number of nodes in batches: {sum(len(c) for c in mini_batches_train)} - "
+                         f"Number of nodes in graph: {len(set(c for C in mini_batches_train for c in C))}\n")
+
+        epoch_loss = train(data_train, dataset, model, optimizer, criterion, device)
+
+        result = multi_evaluate([data_train], dataset, model, evaluator, device)
+        # result = multi_evaluate([data_infer], dataset, model, evaluator, device)
+
         scheduler.step()
 
         logger.add_results(result, epoch_loss)

@@ -28,9 +28,16 @@ class Logger:
 
         # Logger directory
         self.exp_name = self.args.save
-        self.args.save = f'log/{self.args.save}-{self.args.cluster_type}-Aggr_{self.args.aggr}-' \
-                         f'Epochs_{self.args.epochs}-Intervals_{self.args.intervals}-' \
-                         f'Layers_{self.args.num_layers}-Embed_{self.args.hidden_channels}-Dropout_{self.args.dropout}'
+        if args.cluster_type == 'leiden_species':
+            self.args.save = f'log/{self.exp_name}-' \
+                             f'{self.args.cluster_type + "_Overlap_" + str(self.args.overlap_ratio).replace(".", "")}-Aggr_{self.args.aggr}-' \
+                             f'Epochs_{self.args.epochs}-Intervals_{self.args.intervals}-' \
+                             f'Layers_{self.args.num_layers}-Embed_{self.args.hidden_channels}-Dropout_{self.args.dropout}-Edge_drop_{self.args.edge_drop}'
+        else:
+            self.args.save = f'log/{self.args.save}-' \
+                             f'{self.args.cluster_type}-Aggr_{self.args.aggr}-' \
+                             f'Epochs_{self.args.epochs}-Intervals_{self.args.intervals}-' \
+                             f'Layers_{self.args.num_layers}-Embed_{self.args.hidden_channels}-Dropout_{self.args.dropout}-Edge_drop_{self.args.edge_drop}'
 
         self.create_exp_dir(scripts_to_save)
         self.args.model_save_path = os.path.join(self.args.save, self.args.model_save_path)
@@ -60,7 +67,7 @@ class Logger:
         logging.info(f"Test ROC-ACU: {self.results_metric['test'][-1]:.4f}")
 
         logging.info(
-         f"Best Test ROC-AUC at epoch {self.best_epoch + 1} with: {self.results_metric['test'][self.best_epoch]:.4f}")
+            f"Best Test ROC-AUC at epoch {self.best_epoch + 1} with: {self.results_metric['test'][self.best_epoch]:.4f}")
 
     def save_ckpt(self, model, optimizer, loss, epoch, name_pre, name_post='best'):
         """
@@ -87,7 +94,7 @@ class Logger:
 
         filename = '{}/{}_{}.pth'.format(self.args.model_save_path, name_pre, name_post)
         torch.save(state, filename)
-        print('Model has been saved as {}'.format(filename))
+        logging.info('Model has been saved as {}'.format(filename))
 
     @staticmethod
     def save_best_result(list_of_dict, file_name, dir_path='best_result'):
@@ -119,9 +126,15 @@ class Logger:
         else:
             cnt = 2
             while os.path.exists(self.args.save):
-                self.args.save = f'log/{self.exp_name}_{cnt}-{self.args.cluster_type}-Aggr_{self.args.aggr}-' \
-                                 f'Epochs_{self.args.epochs}-Intervals_{self.args.intervals}-' \
-                                 f'Layers_{self.args.num_layers}-Embed_{self.args.hidden_channels}-Dropout_{self.args.dropout}'
+                if self.args.cluster_type == 'leiden_species':
+                    self.args.save = f'log/{self.exp_name}_{cnt}-' \
+                                     f'{self.args.cluster_type + "_Overlap_" + str(self.args.overlap_ratio).replace(".", "")}-Aggr_{self.args.aggr}-' \
+                                     f'Epochs_{self.args.epochs}-Intervals_{self.args.intervals}-' \
+                                     f'Layers_{self.args.num_layers}-Embed_{self.args.hidden_channels}-Dropout_{self.args.dropout}-Edge_drop_{self.args.edge_drop}'
+                else:
+                    self.args.save = f'log/{self.exp_name}_{cnt}-{self.args.cluster_type}-Aggr_{self.args.aggr}-' \
+                                     f'Epochs_{self.args.epochs}-Intervals_{self.args.intervals}-' \
+                                     f'Layers_{self.args.num_layers}-Embed_{self.args.hidden_channels}-Dropout_{self.args.dropout}-Edge_drop_{self.args.edge_drop}'
                 cnt += 1
             os.makedirs(self.args.save)
         print('Experiment dir : {}'.format(self.args.save))

@@ -27,11 +27,9 @@ class GCN(torch.nn.Module):
             conv.reset_parameters()
 
     def forward(self, x, edge_index):
-        edge_index, _ = dropout_edge(edge_index, p=0.1, training=self.training)
+        edge_index, _ = dropout_edge(edge_index, p=self.args.edge_drop, training=self.training)
         for conv in self.convs[:-1]:
-
             x = conv(x, edge_index)
-            # x = checkpoint(conv, x, edge_index)
             x = self.activation(x)
             x = self.dropout(x)
 

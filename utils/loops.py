@@ -4,10 +4,9 @@ import numpy as np
 from tqdm import tqdm
 from . import intersection, process_indexes
 from torch.cuda.amp import autocast, GradScaler
-from torch.utils.checkpoint import checkpoint
 
 
-def train(data, dataset, model, optimizer, criterion, device, edge_sampling=800000):
+def train(data, dataset, model, optimizer, criterion, device):
     loss_list = []
     model.train()
     sg_nodes, sg_edges, _, _ = data
@@ -20,17 +19,6 @@ def train(data, dataset, model, optimizer, criterion, device, edge_sampling=8000
     for idx in tqdm(idx_clusters, desc='Training process'):
         x = dataset.x[sg_nodes[idx]].float().to(device)
 
-        # # Random
-        # random_idx = np.random.choice(sg_edges[idx].shape[1], size=min(sg_edges[idx].shape[1], edge_sampling),
-        #                               replace=False)
-        # random_idx = np.sort(random_idx)
-        # sg_edges_ = sg_edges[idx][:, random_idx].to(device)
-
-        # print()
-        # print(x.shape, sg_edges[idx].shape, '****')
-        # print()
-
-        # Not random
         sg_edges_ = sg_edges[idx].to(device)
 
         mapper = {node: idx for idx, node in enumerate(sg_nodes[idx])}
@@ -54,7 +42,7 @@ def train(data, dataset, model, optimizer, criterion, device, edge_sampling=8000
 
 
 @torch.no_grad()
-def multi_evaluate(valid_data_list, dataset, model, evaluator, device, edge_sampling=800000):
+def multi_evaluate(valid_data_list, dataset, model, evaluator, device):
     model.eval()
     target = dataset.y.detach().numpy()
 
@@ -93,15 +81,6 @@ def multi_evaluate(valid_data_list, dataset, model, evaluator, device, edge_samp
             tr_idx = [mapper[tr_idx] for tr_idx in inter_tr_idx]
             v_idx = [mapper[v_idx] for v_idx in inter_v_idx]
 
-            # # Random
-            # random_idx = np.random.choice(sg_edges[idx].shape[1], size=min(sg_edges[idx].shape[1], edge_sampling),
-            #                               replace=False)
-            # random_idx = np.sort(random_idx)
-            #
-            # with autocast(enabled=True):
-            #     pred = model(x, sg_edges[idx][:, random_idx].to(device)).cpu().detach()
-
-            # Not random
             with autocast(enabled=True):
                 pred = model(x, sg_edges[idx].to(device)).cpu().detach()
 
