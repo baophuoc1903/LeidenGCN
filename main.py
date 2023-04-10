@@ -8,7 +8,7 @@ import torch.optim as optim
 from dataset import OGBNDataset
 from ogb.nodeproppred import Evaluator
 from utils.args import args_parser
-from utils.logger import Logger
+from utils.logger import Logger, set_logging
 from utils.cluster import partition_graph, node_species_histogram, histogram_plot
 from utils.loops import (
     train,
@@ -63,7 +63,6 @@ def training(args, scripts=True):
     # args.clusters_path = os.path.splitext(args.clusters_path)[0]
 
     data_train = None
-    # data_infer = None
     for epoch in range(1, args.epochs + 1):
 
         if epoch % args.intervals == 1 or args.intervals == 1:
@@ -71,19 +70,11 @@ def training(args, scripts=True):
             mini_batches_train = partition_graph(dataset, args)
             data_train = dataset.generate_sub_graphs(mini_batches_train, cluster_number=args.cluster_number)
 
-            # mini_batches_infer = partition_graph(dataset, args, infer=True)
-            # data_infer = dataset.generate_sub_graphs(mini_batches_infer, cluster_number=args.cluster_number // 2,
-            #                                          run_type='evaluation')
-
             if epoch == 1:
                 # Visualize training clusters
                 mini_batches_histogram_train = node_species_histogram(dataset.whole_graph, mini_batches_train)
-                histogram_plot(mini_batches_histogram_train, dataset.whole_graph.node_species.unique(), label="train_histogram")
-
-                # Visualize inference clusters
-                # mini_batches_histogram_infer = node_species_histogram(dataset.whole_graph, mini_batches_infer)
-                # histogram_plot(mini_batches_histogram_infer, dataset.whole_graph.node_species.unique(),
-                #                label="infer_histogram")
+                histogram_plot(mini_batches_histogram_train, dataset.whole_graph.node_species.unique(),
+                               label="train_histogram")
 
             args.cluster_number = len(mini_batches_train)
             logging.info(f"Number of nodes in batches: {sum(len(c) for c in mini_batches_train)} - "
@@ -92,7 +83,6 @@ def training(args, scripts=True):
         epoch_loss = train(data_train, dataset, model, optimizer, criterion, device)
 
         result = multi_evaluate([data_train], dataset, model, evaluator, device)
-        # result = multi_evaluate([data_infer], dataset, model, evaluator, device)
 
         scheduler.step()
 

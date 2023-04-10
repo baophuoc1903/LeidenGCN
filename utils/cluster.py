@@ -15,6 +15,24 @@ import matplotlib.pyplot as plt
 import math
 
 
+def outer_edge_ratio(graph, first_part, second_part, eps=1e-8):
+    """
+    Compute the ratio between number of edges that connect 2 clusters and total number of nodes in 2 clusters
+    :param graph: original graph
+    :param first_part: list of vertex in first cluster
+    :param second_part: list of vertex in second cluster
+    :param eps: Avoid 0 ratio
+    :return: a ratio represents the degree gain if merge 2 cluster together
+    """
+    first = graph.subgraph(first_part)
+    second = graph.subgraph(second_part)
+    union = graph.subgraph(first_part + second_part)
+
+    inner = first.ecount() + second.ecount()
+    outer = union.ecount()
+    return (outer - inner) / (len(first_part) + len(second_part)) + eps
+
+
 def generate_mini_batch(parts, num_cluster, overlap=0, dataset=None):
     part_per_batch = len(parts) // num_cluster
 
@@ -312,24 +330,6 @@ def leiden_recursive(graph, orig_parts, max_comm_size=10000, verbose=False):
     return parts
 
 
-def outer_edge_ratio(graph, first_part, second_part, eps=1e-8):
-    """
-    Compute the ratio between number of edges that connect 2 clusters and total number of nodes in 2 clusters
-    :param graph: original graph
-    :param first_part: list of vertex in first cluster
-    :param second_part: list of vertex in second cluster
-    :param eps: Avoid 0 ratio
-    :return: a ratio represents the degree gain if merge 2 cluster together
-    """
-    first = graph.subgraph(first_part)
-    second = graph.subgraph(second_part)
-    union = graph.subgraph(first_part + second_part)
-
-    inner = first.ecount() + second.ecount()
-    outer = union.ecount()
-    return (outer - inner) / (len(first_part) + len(second_part)) + eps
-
-
 def singleton_communities(parts, size=3):
     """
     Finding all community that is considered to be a singleton community
@@ -457,14 +457,12 @@ if __name__ == '__main__':
 
     # Leiden cluster
     ig.summary(G)
-    for cnt in range(1):
-        # leiden_parts = leiden_clustering(G, None, verbose=True)
-        leiden_parts = [dataset.get_idx_split()['test']]
-        parts, overlap_list = custom_clustering(G, leiden_parts, max_comm_size=100, min_comm_size=50, n_iters=1,
-                                                verbose=True,
-                                                overlap=10)
 
-        print(f"Number of clusters: {len(parts)}")
-        for i, part in enumerate(parts):
-            print(f"Cluster {i} contain {len(part)} nodes")
-        cluster_writer(parts + [overlap_list], os.path.join(dirname, f'leiden_clusters_50_100_raw_test_overlap.csv'))
+    leiden_parts = leiden_clustering(G, None, verbose=True)
+    parts, overlap_list = custom_clustering(G, leiden_parts, max_comm_size=100, min_comm_size=50, n_iters=1,
+                                            verbose=True,
+                                            overlap=10)
+    print(f"Number of clusters: {len(parts)}")
+    for i, part in enumerate(parts):
+        print(f"Cluster {i} contain {len(part)} nodes")
+    cluster_writer(parts, os.path.join(dirname, f'leiden_clusters.csv'))
