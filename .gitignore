@@ -1,4 +1,7 @@
-/dataset/
+/dataset/ogbn_proteins
+/dataset/edge_features_index_v2.pkl
+/dataset/init_node_features_add.pt
+/dataset/init_node_features_mean.pt
 /venv/
 /log/
 /__pycache__/

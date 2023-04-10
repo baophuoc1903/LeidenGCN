@@ -34,6 +34,15 @@ def outer_edge_ratio(graph, first_part, second_part, eps=1e-8):
 
 
 def generate_mini_batch(parts, num_cluster, overlap=0, dataset=None):
+    """
+    Generated batch using Stochastic Multiple Partition in Cluster-GCN paper.
+    :param parts: list of communities in graph
+    :param num_cluster: number of batch/subgraph need to extract
+    :param overlap: gather every community whose size smaller than overlap to form an extra batch
+    :param dataset: ogbn-proteins dataset, need to specified when overlap is not zero. Using to extract training node
+                    because overlap communities are consider only for training node.
+    :return: a list of subgraph/batch, whose size is equal to num_cluster
+    """
     part_per_batch = len(parts) // num_cluster
 
     random_idx = np.arange(len(parts))
@@ -80,46 +89,14 @@ def overlapping_batch(dataset, cluster, overlap=300):
     return sorted(set(overlap_cluster))
 
 
-def generate_mini_batch_separately(dataset, train_cluster, valid_cluster, test_cluster, num_cluster, overlap=300):
-    part_per_batch_train = len(train_cluster) // num_cluster
-    part_per_batch_valid = len(valid_cluster) // num_cluster
-    part_per_batch_test = len(test_cluster) // num_cluster
-
-    random_idx_train = np.arange(len(train_cluster))
-    random_idx_valid = np.arange(len(valid_cluster))
-    random_idx_test = np.arange(len(test_cluster))
-    np.random.shuffle(random_idx_train)
-    np.random.shuffle(random_idx_valid)
-    np.random.shuffle(random_idx_test)
-
-    mini_batches = []
-    for i in range(num_cluster - 1):
-        mini_batch = []
-        for parts_idx in range(i * part_per_batch_train, (i + 1) * part_per_batch_train):
-            mini_batch.extend(train_cluster[random_idx_train[parts_idx]])
-        for parts_idx in range(i * part_per_batch_valid, (i + 1) * part_per_batch_valid):
-            mini_batch.extend(valid_cluster[random_idx_valid[parts_idx]])
-        for parts_idx in range(i * part_per_batch_test, (i + 1) * part_per_batch_test):
-            mini_batch.extend(test_cluster[random_idx_test[parts_idx]])
-
-        mini_batch = overlapping_batch(dataset, mini_batch, overlap=overlap)
-        mini_batches.append(mini_batch)
-
-    last_batch = []
-    for parts_idx in range((num_cluster - 1) * part_per_batch_train, len(train_cluster)):
-        last_batch.extend(train_cluster[random_idx_train[parts_idx]])
-    for parts_idx in range((num_cluster - 1) * part_per_batch_valid, len(valid_cluster)):
-        last_batch.extend(valid_cluster[random_idx_valid[parts_idx]])
-    for parts_idx in range((num_cluster - 1) * part_per_batch_test, len(test_cluster)):
-        last_batch.extend(test_cluster[random_idx_test[parts_idx]])
-
-    last_batch = overlapping_batch(dataset, last_batch, overlap=overlap)
-    mini_batches.append(last_batch)
-
-    return mini_batches
-
-
 def leiden_partition_graph(dataset, args):
+    """
+    Generated batch from communities extracted by the Leiden algorithm. There are 2 way to form batches:
+    the Leiden algorithm without random overlapping node and the Leiden algorithm with random overlapping node
+    :param dataset: ogbn-proteins dataset
+    :param args: list of input arguments
+    :return: a list of subgraph/batch
+    """
     leiden_parts = cluster_reader(f"{args.clusters_path}")
 
     if not args.overlap:
@@ -131,6 +108,15 @@ def leiden_partition_graph(dataset, args):
 
 
 def leiden_partition_graph_by_species(dataset, args, overlap_ratio=0.1):
+    """
+    The Leiden algorithm with adding overlapping community constraint. This function take communities extracted by
+    min/max community size constraint Leiden algorithm as input to further processing (adding overlapping) to balance
+    the node feature distribution
+    :param dataset: the ogbn-proteins dataset
+    :param args: list of input arguments
+    :param overlap_ratio: percent of overlapping node feature distribution within a community
+    :return: a list of subgraph/batch
+    """
     all_coms_leiden = cluster_reader(f"{args.clusters_path}")
     data = dataset.whole_graph
 
@@ -176,6 +162,16 @@ def leiden_partition_graph_by_species(dataset, args, overlap_ratio=0.1):
 
 
 def partition_graph(dataset, args, infer=False):
+    """
+    Graph-wise sampling for training mini-batch gradient descent. There are 3 option to choose for this step:
+    random partition; the leiden algorithm with min/max community size constraint and the leiden algorithm with
+    min/max community size constraint and overlapping community constraint.
+    :param dataset: the ogbn-proteins dataset
+    :param args: list of input arguments
+    :param infer: whether sampling for inference or for training proposed. If set to True, the number of batch/subgraph
+                  is half the number of batch use for training.
+    :return: a list of subgraph/batch
+    """
     params = deepcopy(args)
     if infer:
         params.cluster_number = params.cluster_number//2
@@ -368,7 +364,6 @@ def merge_clusters(graph, orig_parts, n_iters=2, max_comm_size=10000, min_comm_s
                 if len(parts[st_idx]) > min_comm_size:
                     break
                 if len(parts[st_idx]) + len(parts[nd_idx]) > max_comm_size:
-                    # if (len(parts[st_idx]) + len(parts[nd_idx]) > max_comm_size) and (len(parts[nd_idx]) > min_comm_size):
                     break
                 cur_ratio = outer_edge_ratio(graph, parts[st_idx], parts[nd_idx])
                 if max_ratio is None or max_ratio < cur_ratio:
@@ -422,6 +417,12 @@ def custom_clustering(graph, leiden_parts, max_comm_size=10000, min_comm_size=75
 
 
 def node_species_histogram(data, clusters):
+    """
+    Compute the node feature histogram within each community.
+    :param data: the ogbn-proteins dataset
+    :param clusters: a list of subgraph/batch/community
+    :return: a list of node feature histogram.
+    """
     histograms = []
     for cluster in clusters:
         cluster_species = data.node_species[cluster]
@@ -431,6 +432,15 @@ def node_species_histogram(data, clusters):
 
 
 def histogram_plot(histograms, xticks, label="Histogram", color='g', xlabel="Node species"):
+    """
+    Visualize the node feature histogram for a list of subgraph/batch.
+    :param histograms: list of node feature histogram
+    :param xticks: list of node feature name
+    :param label: chart name
+    :param color: color of each bar in bar chart
+    :param xlabel: label of the x-axis
+    :return: None
+    """
     fig, ax = plt.subplots(nrows=math.ceil(len(histograms)/4), ncols=4, figsize=(18, 8))
     ax = ax.flatten()
 
@@ -452,16 +462,16 @@ def histogram_plot(histograms, xticks, label="Histogram", color='g', xlabel="Nod
 
 if __name__ == '__main__':
     dirname = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'dataset')
-    dataset = PygNodePropPredDataset('ogbn-proteins', root='F:\Thesis\Graph_Clustering\dataset')
+    dataset = PygNodePropPredDataset('ogbn-proteins', root=dirname)
     G = build_graph(dirname)
 
-    # Leiden cluster
+    # Leiden cluster with min/max community size constraint
     ig.summary(G)
 
-    leiden_parts = leiden_clustering(G, None, verbose=True)
-    parts, overlap_list = custom_clustering(G, leiden_parts, max_comm_size=100, min_comm_size=50, n_iters=1,
-                                            verbose=True,
-                                            overlap=10)
+    parts = leiden_clustering(G, None, verbose=True)
+    # parts, overlap_list = custom_clustering(G, leiden_parts, max_comm_size=100, min_comm_size=50, n_iters=1,
+    #                                         verbose=True,
+    #                                         overlap=0)
     print(f"Number of clusters: {len(parts)}")
     for i, part in enumerate(parts):
         print(f"Cluster {i} contain {len(part)} nodes")

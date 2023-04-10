@@ -12,21 +12,21 @@ def args_parser():
                         help='the file path of graph clusters')
     parser.add_argument('--cluster_number', type=int, default=20,
                         help='number of clusters')
-    parser.add_argument('--intervals', type=int, default=20,
+    parser.add_argument('--intervals', type=int, default=1,
                         help='Training epoch before clusters again')
     parser.add_argument('--cluster_type', type=str, default='random', choices=['random', 'leiden', 'leiden_species'],
                         help='Graph partition type (random or leiden)')
 
     # Training args
-    parser.add_argument('--nruns', type=int, default=5, help='number of training time')
+    parser.add_argument('--nruns', type=int, default=1, help='number of training time')
     parser.add_argument('--use_cpu', action='store_true', help='Default using gpu')
     parser.add_argument('--device', type=int, default=0,
                         help='which gpu to use if any (default: 0)')
-    parser.add_argument('--epochs', type=int, default=500,
+    parser.add_argument('--epochs', type=int, default=1000,
                         help='number of epochs to train')
     parser.add_argument('--num_evals', type=int, default=1,
                         help='The number of evaluation times')
-    parser.add_argument('--lr', type=float, default=0.001,
+    parser.add_argument('--lr', type=float, default=0.005,
                         help='learning rate set for optimizer')
     parser.add_argument('--dropout', type=float, default=0.5)
     parser.add_argument('--edge_drop', type=float, default=0.0)
